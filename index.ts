@@ -1,75 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { execute_bash, list_files, read_file, write_file } from "./tools";
+import chalk from "chalk";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+import { toolRegistry, tools } from "./tools";
 
 const anthropic = new Anthropic();
 const model = "claude-3-5-haiku-latest";
 
-type ToolHandler = (input: any) => Promise<string>;
-
-const toolRegistry: Record<string, ToolHandler> = {
-  list_files,
-  read_file,
-  write_file,
-  execute_bash,
-};
-
-const tools: Anthropic.Tool[] = [
-  {
-    name: "list_files",
-    description: "List files in a directory",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: {
-          type: "string",
-          description:
-            "The path to the directory to list files from, e.g., '.' or './src'.",
-        },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "read_file",
-    description: "Read the contents of a file",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "The path to the file to read." },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "write_file",
-    description: "Write content to a file (overwrites existing content)",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "The path to the file to write." },
-        content: {
-          type: "string",
-          description: "The content to write to the file.",
-        },
-      },
-      required: ["path", "content"],
-    },
-  },
-  {
-    name: "execute_bash",
-    description: "Execute a bash command and return its output",
-    input_schema: {
-      type: "object",
-      properties: {
-        command: {
-          type: "string",
-          description: "The bash command to execute.",
-        },
-      },
-      required: ["command"],
-    },
-  },
-];
+const userHexCode = "#e11d48"; // Hex code for user's color
+const claudeHexCode = "#d97757"; // Hex code for Claude's color
+const toolHexCode = "#0d9488"; // Hex code for tools color
 
 async function processToolUse(
   toolUse: Anthropic.ToolUseBlock
@@ -93,16 +33,28 @@ async function processToolUse(
 
 async function chat() {
   const messages: Anthropic.MessageParam[] = [];
+  const sessionId = `sess_${Date.now()}_${Math.random()
+    .toString(36)
+    .substring(2, 8)}`;
+  const sessionDir = resolve(sessionId);
+
+  await mkdir(sessionDir, { recursive: true });
+
+  let messageCounter = 1;
+
+  let stopReason: Anthropic.StopReason | null = null;
 
   while (true) {
-    const userInput = prompt("You:");
+    if (stopReason !== "tool_use") {
+      const userInput = prompt(chalk.hex(userHexCode).bold("You:"));
 
-    if (!userInput || userInput.toLowerCase() === "exit") {
-      console.log("Goodbye!");
-      break;
+      if (!userInput || userInput.toLowerCase() === "exit") {
+        console.log("Goodbye!");
+        break;
+      }
+
+      messages.push({ role: "user", content: userInput });
     }
-
-    messages.push({ role: "user", content: userInput });
 
     const response = await anthropic.messages.create({
       model,
@@ -117,22 +69,37 @@ async function chat() {
 
     for (const block of response.content) {
       if (block.type === "text") {
-        console.log(`Claude: ${block.text}`);
+        console.log(
+          `${chalk.hex(claudeHexCode).bold("Claude:")} ${block.text}`
+        );
       } else if (block.type === "tool_use") {
+        console.log(
+          `${chalk.hex(toolHexCode).bold(`${block.name}`)} with args:\n`,
+          block.input
+        );
         toolResults.push(await processToolUse(block));
       }
     }
 
     if (toolResults.length > 0) {
       messages.push({ role: "user", content: toolResults });
+      await Bun.write(
+        resolve(sessionDir, `${messageCounter}.json`),
+        JSON.stringify(messages, null, 2)
+      );
+      messageCounter++;
     }
 
-    console.log(JSON.stringify(messages, null, 2));
-
-    if (response.stop_reason === "end_turn") {
-      break;
-    }
+    stopReason = response.stop_reason;
   }
 }
 
+function showWelcome() {
+  const title = "Welcome to nano-claude-code!";
+  console.log();
+  console.log(chalk.hex(claudeHexCode).bold(title));
+  console.log();
+}
+
+showWelcome();
 chat().catch(console.error);
