@@ -1,28 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
 import { toolRegistry, tools } from "./tools";
 
 const anthropic = new Anthropic();
 const model = "claude-3-5-haiku-latest";
-
-const userHexCode = "#e11d48"; // Hex code for user's color
-const claudeHexCode = "#d97757"; // Hex code for Claude's color
-const toolHexCode = "#0d9488"; // Hex code for tools color
+const maxTokens = 4096;
+const userHexCode = "#e11d48";
+const claudeHexCode = "#d97757";
+const toolHexCode = "#0d9488";
 
 async function processToolUse(
   toolUse: Anthropic.ToolUseBlock
 ): Promise<Anthropic.ContentBlockParam> {
   const handler = toolRegistry[toolUse.name];
-  if (!handler) {
-    return {
-      type: "tool_result",
-      tool_use_id: toolUse.id,
-      content: `Unknown tool: ${toolUse.name}`,
-    };
-  }
-
+  if (!handler) throw new Error(`Unknown tool: ${toolUse.name}`);
   const result = await handler(toolUse.input);
   return {
     type: "tool_result",
@@ -33,18 +24,11 @@ async function processToolUse(
 
 async function chat() {
   const messages: Anthropic.MessageParam[] = [];
-  const sessionId = `sess_${Date.now()}_${Math.random()
-    .toString(36)
-    .substring(2, 8)}`;
-  const sessionDir = resolve(sessionId);
-
-  await mkdir(sessionDir, { recursive: true });
-
-  let messageCounter = 1;
 
   let stopReason: Anthropic.StopReason | null = null;
 
   while (true) {
+    // If the last response was not a tool use, prompt for user input.
     if (stopReason !== "tool_use") {
       const userInput = prompt(chalk.hex(userHexCode).bold("You:"));
 
@@ -58,7 +42,7 @@ async function chat() {
 
     const response = await anthropic.messages.create({
       model,
-      max_tokens: 2048,
+      max_tokens: maxTokens,
       tools,
       messages,
     });
@@ -83,11 +67,6 @@ async function chat() {
 
     if (toolResults.length > 0) {
       messages.push({ role: "user", content: toolResults });
-      await Bun.write(
-        resolve(sessionDir, `${messageCounter}.json`),
-        JSON.stringify(messages, null, 2)
-      );
-      messageCounter++;
     }
 
     stopReason = response.stop_reason;
