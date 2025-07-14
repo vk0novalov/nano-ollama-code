@@ -5,6 +5,8 @@ import { read_file, toolRegistry, tools } from "./tools";
 const anthropic = new Anthropic();
 const model = "claude-3-5-haiku-latest";
 const maxTokens = 4096;
+
+// Define colors for different roles when printing messages.
 const userHexCode = "#e11d48";
 const claudeHexCode = "#d97757";
 const toolHexCode = "#0d9488";
@@ -83,12 +85,7 @@ async function chat() {
   }
 }
 
-function showWelcome() {
-  const title = "Welcome to nano-claude-code!";
-  console.log();
-  console.log(chalk.hex(claudeHexCode).bold(title));
-  console.log();
-}
-
-showWelcome();
+console.log();
+console.log(chalk.hex(claudeHexCode).bold("Welcome to nano-claude-code!"));
+console.log();
 chat().catch(console.error);
