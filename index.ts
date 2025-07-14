@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
-import { toolRegistry, tools } from "./tools";
+import { read_file, toolRegistry, tools } from "./tools";
 
 const anthropic = new Anthropic();
 const model = "claude-3-5-haiku-latest";
@@ -11,7 +11,7 @@ const toolHexCode = "#0d9488";
 
 async function processToolUse(
   toolUse: Anthropic.ToolUseBlock
-): Promise<Anthropic.ContentBlockParam> {
+): Promise<Anthropic.ToolResultBlockParam> {
   const handler = toolRegistry[toolUse.name];
   if (!handler) throw new Error(`Unknown tool: ${toolUse.name}`);
   const result = await handler(toolUse.input);
@@ -40,11 +40,14 @@ async function chat() {
       messages.push({ role: "user", content: userInput });
     }
 
+    const instructions = await read_file({ path: "prompt.md" });
+
     const response = await anthropic.messages.create({
       model,
       max_tokens: maxTokens,
       tools,
       messages,
+      system: instructions,
     });
 
     messages.push({ role: "assistant", content: response.content });
@@ -57,11 +60,18 @@ async function chat() {
           `${chalk.hex(claudeHexCode).bold("Claude:")} ${block.text}`
         );
       } else if (block.type === "tool_use") {
-        console.log(
-          `${chalk.hex(toolHexCode).bold(`${block.name}`)} with args:\n`,
-          block.input
-        );
-        toolResults.push(await processToolUse(block));
+        const toolResult = await processToolUse(block);
+        toolResults.push(toolResult);
+
+        console.log(`\n${chalk.hex(toolHexCode).bold(`🔧 ${block.name}`)}`);
+        console.log(chalk.gray("─".repeat(50)));
+
+        console.log(chalk.hex(toolHexCode)("Arguments:"));
+        console.log(chalk.gray(JSON.stringify(block.input, null, 2)));
+
+        console.log(chalk.hex(toolHexCode)("Result:"));
+        console.log(chalk.gray(toolResult.content));
+        console.log(chalk.gray("─".repeat(50)));
       }
     }
 
