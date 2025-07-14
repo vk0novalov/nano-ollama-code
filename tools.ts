@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { resolve } from "node:path";
 
-async function read_file(args: { path: string }): Promise<string> {
+export async function read_file(args: { path: string }): Promise<string> {
   try {
     const file = Bun.file(resolve(args.path));
     return await file.text();
@@ -12,7 +12,7 @@ async function read_file(args: { path: string }): Promise<string> {
   }
 }
 
-async function write_file(args: {
+export async function write_file(args: {
   path: string;
   content: string;
 }): Promise<string> {
@@ -27,7 +27,7 @@ async function write_file(args: {
   }
 }
 
-async function execute_bash(args: { command: string }): Promise<string> {
+export async function execute_bash(args: { command: string }): Promise<string> {
   try {
     const proc = Bun.spawn(["sh", "-c", args.command], {
       stdout: "pipe",
