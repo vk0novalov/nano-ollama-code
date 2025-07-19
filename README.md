@@ -10,8 +10,14 @@ To install dependencies:
 bun install
 ```
 
-To run `nano-claude-code`, use the following command:
+To create an executable script, you can use the following command:
 
 ```bash
-bun run index.ts
+bun link
+```
+
+To run `nano-claude-code`, go to your project directory and use the following command:
+
+```bash
+nano-claude-code
 ```

@@ -2,6 +2,9 @@
   "name": "nano-claude-code",
   "module": "index.ts",
   "type": "module",
+  "bin": {
+    "nano-claude-code": "./index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

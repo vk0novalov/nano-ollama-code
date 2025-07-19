@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
 import { read_file, toolRegistry, tools } from "./tools";
@@ -26,7 +27,6 @@ async function processToolUse(
 
 async function chat() {
   const messages: Anthropic.MessageParam[] = [];
-
   let stopReason: Anthropic.StopReason | null = null;
 
   while (true) {
@@ -42,7 +42,9 @@ async function chat() {
       messages.push({ role: "user", content: userInput });
     }
 
-    const instructions = await read_file({ path: "prompt.md" });
+    const instructions = await read_file({
+      path: new URL("prompt.md", import.meta.url).pathname,
+    });
 
     const response = await anthropic.messages.create({
       model,
