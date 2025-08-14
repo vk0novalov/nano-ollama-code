@@ -1,93 +1,111 @@
 #!/usr/bin/env bun
-import Anthropic from "@anthropic-ai/sdk";
 import chalk from "chalk";
+import type { Message, ToolCall } from "ollama";
+import { Ollama } from "ollama";
 import { read_file, toolRegistry, tools } from "./tools";
 
-const anthropic = new Anthropic();
-const model = "claude-3-5-haiku-latest";
-const maxTokens = 4096;
+const ollama = new Ollama({ host: "http://localhost:11434" });
+const model = "qwen3:8b";
 
 // Define colors for different roles when printing messages.
 const userHexCode = "#e11d48";
-const claudeHexCode = "#d97757";
+const assistantHexCode = "#d97757";
 const toolHexCode = "#0d9488";
 
-async function processToolUse(
-  toolUse: Anthropic.ToolUseBlock
-): Promise<Anthropic.ToolResultBlockParam> {
-  const handler = toolRegistry[toolUse.name];
-  if (!handler) throw new Error(`Unknown tool: ${toolUse.name}`);
-  const result = await handler(toolUse.input);
+async function processToolCall(toolCall: ToolCall): Promise<Message> {
+  const handler = toolRegistry[toolCall.function.name];
+  if (!handler) throw new Error(`Unknown tool: ${toolCall.function.name}`);
+
+  const args =
+    typeof toolCall.function.arguments === "string"
+      ? JSON.parse(toolCall.function.arguments)
+      : toolCall.function.arguments;
+  const result = await handler(args);
+
   return {
-    type: "tool_result",
-    tool_use_id: toolUse.id,
+    role: "tool",
     content: result,
   };
 }
 
 async function chat() {
-  const messages: Anthropic.MessageParam[] = [];
-  let stopReason: Anthropic.StopReason | null = null;
+  const messages: Message[] = [];
 
   while (true) {
-    // If the last response was not a tool use, prompt for user input.
-    if (stopReason !== "tool_use") {
-      const userInput = prompt(chalk.hex(userHexCode).bold("You:"));
+    const userInput = prompt(chalk.hex(userHexCode).bold("You:"));
 
-      if (!userInput || userInput.toLowerCase() === "exit") {
-        console.log("Goodbye!");
-        break;
-      }
-
-      messages.push({ role: "user", content: userInput });
+    if (!userInput || userInput.toLowerCase() === "exit") {
+      console.log("Goodbye!");
+      break;
     }
+
+    messages.push({ role: "user", content: userInput });
 
     const instructions = await read_file({
       path: new URL("prompt.md", import.meta.url).pathname,
     });
 
-    const response = await anthropic.messages.create({
-      model,
-      max_tokens: maxTokens,
-      tools,
-      messages,
-      system: instructions,
-    });
+    try {
+      const response = await ollama.chat({
+        model,
+        messages: [{ role: "system", content: instructions }, ...messages],
+        tools,
+      });
 
-    messages.push({ role: "assistant", content: response.content });
-
-    const toolResults: Anthropic.ContentBlockParam[] = [];
-
-    for (const block of response.content) {
-      if (block.type === "text") {
+      if (response.message.content) {
         console.log(
-          `${chalk.hex(claudeHexCode).bold("Claude:")} ${block.text}`
+          `${chalk.hex(assistantHexCode).bold("Assistant:")} ${response.message.content}`,
         );
-      } else if (block.type === "tool_use") {
-        const toolResult = await processToolUse(block);
-        toolResults.push(toolResult);
-
-        console.log(`\n${chalk.hex(toolHexCode).bold(`🔧 ${block.name}`)}`);
-        console.log(chalk.gray("─".repeat(50)));
-
-        console.log(chalk.hex(toolHexCode)("Arguments:"));
-        console.log(chalk.gray(JSON.stringify(block.input, null, 2)));
-
-        console.log(chalk.hex(toolHexCode)("Result:"));
-        console.log(chalk.gray(toolResult.content));
-        console.log(chalk.gray("─".repeat(50)));
       }
-    }
 
-    if (toolResults.length > 0) {
-      messages.push({ role: "user", content: toolResults });
-    }
+      messages.push(response.message);
 
-    stopReason = response.stop_reason;
+      // Handle tool calls
+      if (
+        response.message.tool_calls &&
+        response.message.tool_calls.length > 0
+      ) {
+        for (const toolCall of response.message.tool_calls) {
+          console.log(
+            `\n${chalk.hex(toolHexCode).bold(`🔧 ${toolCall.function.name}`)}`,
+          );
+          console.log(chalk.gray("─".repeat(50)));
+
+          console.log(chalk.hex(toolHexCode)("Arguments:"));
+          console.log(chalk.gray(toolCall.function.arguments));
+
+          const toolResult = await processToolCall(toolCall);
+
+          console.log(chalk.hex(toolHexCode)("Result:"));
+          console.log(chalk.gray(toolResult.content));
+          console.log(chalk.gray("─".repeat(50)));
+
+          messages.push(toolResult);
+        }
+
+        // Get the final response after tool execution
+        const finalResponse = await ollama.chat({
+          model,
+          messages: [{ role: "system", content: instructions }, ...messages],
+          tools,
+        });
+
+        if (finalResponse.message.content) {
+          console.log(
+            `${chalk.hex(assistantHexCode).bold("Assistant:")} ${finalResponse.message.content}`,
+          );
+        }
+
+        messages.push(finalResponse.message);
+      }
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+    }
   }
 }
 
 console.log();
-console.log(chalk.hex(claudeHexCode).bold("Welcome to nano-claude-code!"));
+console.log(chalk.hex(assistantHexCode).bold("Welcome to nano-ollama-code!"));
+console.log(chalk.gray("Make sure Ollama is running locally on port 11434"));
 console.log();
 chat().catch(console.error);
